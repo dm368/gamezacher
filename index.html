@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Кликер Усиков</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            overflow: hidden;
+            background: linear-gradient(135deg, #fefcbf, #ed8936);
+            user-select: none; /* Запрещает выделение текста */
+        }
+        .mustache-field {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: url('https://www.transparenttextures.com/patterns/clean-gray-paper.png') repeat;
+            z-index: -1;
+            opacity: 0.2;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.15); }
+            100% { transform: scale(1); }
+        }
+        .pulse {
+            animation: pulse 0.3s ease;
+        }
+        @keyframes glow {
+            0% { box-shadow: 0 0 10px rgba(245, 158, 11, 0.5); }
+            50% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.8); }
+            100% { box-shadow: 0 0 10px rgba(245, 158, 11, 0.5); }
+        }
+        .glow {
+            animation: glow 2s infinite;
+        }
+        canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 0;
+            pointer-events: none;
+        }
+        .upgrade-button {
+            transition: transform 0.2s, background-color 0.3s;
+        }
+        .upgrade-button:hover {
+            transform: translateY(-2px);
+        }
+        #target {
+            user-select: none; /* Дополнительно для кнопки */
+            transition: transform 0.3s, width 0.5s, height 0.5s;
+        }
+    </style>
+</head>
+<body class="text-gray-800 min-h-screen flex flex-col items-center justify-center relative">
+    <div class="mustache-field"></div>
+    <canvas id="particle-canvas"></canvas>
+    <div class="container mx-auto p-6 max-w-5xl z-10">
+        <h1 class="text-5xl font-extrabold text-center mb-8 bg-clip-text text-transparent bg-gradient-to-r from-yellow-600 to-orange-500">Кликер Усиков</h1>
+        <div class="text-center mb-8">
+            <p id="score" class="text-3xl font-semibold text-orange-600">Усики: 0</p>
+        </div>
+        <div class="flex justify-center mb-8">
+            <div id="target" class="w-32 h-32 bg-gradient-to-br from-yellow-400 to-orange-400 rounded-full flex items-center justify-center cursor-pointer glow hover:scale-105">
+                <svg class="w-16 h-16 text-gray-800" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M3.5 9C2.67 9 2 9.67 2 10.5c0 .83.67 1.5 1.5 1.5S5 11.33 5 10.5 4.33 9 3.5 9zm17 0c-.83 0-1.5.67-1.5 1.5S19.67 12 20.5 12s1.5-.67 1.5-1.5S21.33 9 20.5 9zm-6.52 1.97c-.57-.55-1.28-.97-2.07-.97s-1.5.42-2.07.97c-.73.71-.73 1.86 0 2.58l4.14 4.02 4.14-4.02c.73-.72.73-1.87 0-2.58zM12 5c2.76 0 5 2.24 5 5 0 1.43-.59 2.73-1.54 3.67l-5.46 5.3-5.46-5.3C3.59 12.73 3 11.43 3 10c0-2.76 2.24-5 5-5s5 2.24 5 5z"/>
+                </svg>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white bg-opacity-80 p-6 rounded-xl shadow-xl">
+            <div>
+                <h2 class="text-2xl font-bold mb-4 text-orange-500">Улучшения</h2>
+                <div id="upgrades" class="space-y-4">
+                    <button id="upgrade-click" class="upgrade-button w-full bg-gradient-to-r from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600 text-white py-3 px-6 rounded-lg flex justify-between items-center shadow-md">
+                        <span>Усиление усов (x2)</span>
+                        <span>Стоимость: <span id="click-cost">100</span></span>
+                    </button>
+                    <button id="upgrade-auto" class="upgrade-button w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white py-3 px-6 rounded-lg flex justify-between items-center shadow-md">
+                        <span>Автоусы (+1/сек)</span>
+                        <span>Стоимость: <span id="auto-cost">200</span></span>
+                    </button>
+                </div>
+            </div>
+            <div>
+                <h2 class="text-2xl font-bold mb-4 text-orange-500">Статистика</h2>
+                <p class="text-lg">Сила усов: <span id="click-power">1</span></p>
+                <p class="text-lg">Автоусы: <span id="auto-count">0</span></p>
+                <p class="text-lg">Усики/сек: <span id="auto-power">0</span></p>
+            </div>
+        </div>
+    </div>
+    <audio id="click-sound" src="https://www.soundjay.com/buttons/soft-click-1.mp3"></audio>
+    <script>
+        let score = 0;
+        let clickPower = 1;
+        let autoCount = 0;
+        let autoPower = 0;
+
+        const scoreDisplay = document.getElementById('score');
+        const target = document.getElementById('target');
+        const clickSound = document.getElementById('click-sound');
+        const upgradeClick = document.getElementById('upgrade-click');
+        const upgradeAuto = document.getElementById('upgrade-auto');
+        const clickCostDisplay = document.getElementById('click-cost');
+        const autoCostDisplay = document.getElementById('auto-cost');
+        const clickPowerDisplay = document.getElementById('click-power');
+        const autoCountDisplay = document.getElementById('auto-count');
+        const autoPowerDisplay = document.getElementById('auto-power');
+
+        let clickCost = 100;
+        let autoCost = 200;
+
+        // Частицы для анимации
+        const canvas = document.getElementById('particle-canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        let particles = [];
+
+        class Particle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.size = Math.random() * 5 + 2;
+                this.speedX = Math.random() * 3 - 1.5;
+                this.speedY = Math.random() * 3 - 1.5;
+                this.opacity = 1;
+            }
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                this.opacity -= 0.02;
+                this.size *= 0.98;
+            }
+            draw() {
+                ctx.fillStyle = `rgba(245, 158, 11, ${this.opacity})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function handleParticles() {
+            particles = particles.filter(p => p.opacity > 0 && p.size > 0.1);
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+            requestAnimationFrame(handleParticles);
+        }
+        handleParticles();
+
+        // Обновление размера усов
+        function updateMustacheSize() {
+            const baseSize = 128; // Начальный размер (32rem = 128px при стандартном масштабе)
+            const growthFactor = Math.min(1 + score / 1000, 4); // Размер увеличивается до 4x
+            const newSize = baseSize * growthFactor;
+            target.style.width = `${newSize}px`;
+            target.style.height = `${newSize}px`;
+            const svg = target.querySelector('svg');
+            svg.style.width = `${newSize * 0.5}px`; // Усы занимают половину круга
+            svg.style.height = `${newSize * 0.5}px`;
+        }
+
+        // Загрузка сохранённого прогресса
+        function loadGame() {
+            const saved = JSON.parse(localStorage.getItem('mustacheGame'));
+            if (saved) {
+                score = saved.score || 0;
+                clickPower = saved.clickPower || 1;
+                autoCount = saved.autoCount || 0;
+                autoPower = saved.autoPower || 0;
+                clickCost = saved.clickCost || 100;
+                autoCost = saved.autoCost || 200;
+                updateDisplay();
+                updateMustacheSize();
+            }
+        }
+
+        // Сохранение прогресса
+        function saveGame() {
+            localStorage.setItem('mustacheGame', JSON.stringify({
+                score, clickPower, autoCount, autoPower, clickCost, autoCost
+            }));
+        }
+
+        // Обновление отображения
+        function updateDisplay() {
+            scoreDisplay.textContent = `Усики: ${Math.floor(score)}`;
+            clickPowerDisplay.textContent = clickPower;
+            autoCountDisplay.textContent = autoCount;
+            autoPowerDisplay.textContent = autoPower;
+            clickCostDisplay.textContent = clickCost;
+            autoCostDisplay.textContent = autoCost;
+            updateMustacheSize();
+        }
+
+        // Клик по цели
+        target.addEventListener('click', (e) => {
+            score += clickPower;
+            target.classList.add('pulse');
+            setTimeout(() => target.classList.remove('pulse'), 300);
+            clickSound.volume = 0.3; // Тихий звук
+            clickSound.play();
+            // Создание частиц
+            for (let i = 0; i < 5; i++) {
+                particles.push(new Particle(e.clientX, e.clientY));
+            }
+            updateDisplay();
+            saveGame();
+        });
+
+        // Предотвращение выделения текста при двойном клике
+        target.addEventListener('dblclick', (e) => {
+            e.preventDefault(); // Отменяет стандартное поведение двойного клика
+        });
+
+        // Покупка улучшения клика
+        upgradeClick.addEventListener('click', () => {
+            if (score >= clickCost) {
+                score -= clickCost;
+                clickPower *= 2;
+                clickCost *= 3;
+                updateDisplay();
+                saveGame();
+            }
+        });
+
+        // Покупка автокликера
+        upgradeAuto.addEventListener('click', () => {
+            if (score >= autoCost) {
+                score -= autoCost;
+                autoCount++;
+                autoPower++;
+                autoCost *= 2;
+                updateDisplay();
+                saveGame();
+            }
+        });
+
+        // Автокликеры
+        setInterval(() => {
+            score += autoPower;
+            updateDisplay();
+            saveGame();
+        }, 1000);
+
+        // Загрузка игры при старте
+        loadGame();
+    </script>
+</body>
+</html>
